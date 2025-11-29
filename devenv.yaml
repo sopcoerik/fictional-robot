@@ -1,0 +1,12 @@
+services:
+  redis:
+    command: "redis-server"
+    port: 6379
+  backend:
+    command: "cd ~/campaign-play-processor/be && npm run dev"
+    port: 3000
+    depends_on: [redis]
+  frontend:
+    command: "cd ~/campaign-play-processor/fe && npm run dev"
+    port: 5173
+    depends_on: [backend]
