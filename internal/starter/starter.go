@@ -19,15 +19,11 @@ func StartService(service *parser.Service, ctx context.Context, serviceChan chan
 	cmd.Stderr = os.Stderr
 
 	err := cmd.Start()
-	if err != nil {
-		serviceChan <- err
-	}
-
-	serviceChan <- nil
+	serviceChan <- err
 
 	go func() {
 		<-ctx.Done()
-		syscall.Kill(-cmd.Process.Pid, syscall.SIGINT)
+		syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 	}()
 
 	cmd.Wait()
