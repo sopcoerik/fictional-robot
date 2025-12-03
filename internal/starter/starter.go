@@ -3,7 +3,6 @@ package starter
 import (
 	"os/exec"
 	"os"
-	"log"
 	"syscall"
 	"context"
 
@@ -11,37 +10,25 @@ import (
 )
 
 
-func StartService(service *parser.Service, ctx context.Context) {
-	
+func StartService(service *parser.Service, ctx context.Context, serviceChan chan error) {
+	cmd := exec.Command("sh", "-c", service.Command)	
 
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
-	for {
-		select {
-			case <-ctx.Done():
-				log.Println("Service shutting down...")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 
-				return
-
-			default:
-				cmd := exec.Command("sh", "-c", service.Command)	
-	
-				cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-
-				cmd.Stdout = os.Stdout
-				cmd.Stderr = os.Stderr
-
-
-
-				err := cmd.Start()
-				if err != nil {
-					log.Fatal(err)
-				}
-
-				log.Printf("Waiting for command to finish...")
-				err = cmd.Wait()
-				log.Printf("Command finished with error: %v", err)
-
-		}
+	err := cmd.Start()
+	if err != nil {
+		serviceChan <- err
 	}
 
+	serviceChan <- nil
+
+	go func() {
+		<-ctx.Done()
+		syscall.Kill(-cmd.Process.Pid, syscall.SIGINT)
+	}()
+
+	cmd.Wait()
 }
