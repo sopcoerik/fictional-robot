@@ -1,6 +1,6 @@
 services:
   redis:
-    command: "edis-server"
+    command: "redis-server"
     port: 6379
   backend:
     command: "cd ~/campaign-play-processor/be && npm run dev"
