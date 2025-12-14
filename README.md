@@ -222,7 +222,7 @@ Bug reports and feature requests welcome! Please open an issue on GitHub.
 
 ## License
 
-MIT License - see LICENSE file for details.
+Apache 2.0 ( for now ) License - see LICENSE file for details.
 
 ---
 
