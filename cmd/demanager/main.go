@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -13,6 +14,27 @@ import (
 	"github.com/sopcoerik/fictional-robot/internal/sorter"
 	"github.com/sopcoerik/fictional-robot/internal/starter"
 )
+
+type RunningService struct {
+	Name        string
+	Service     *parser.Service
+	Ctx         context.Context
+	Cancel      context.CancelFunc
+	GlobalCtx   context.Context // parent context to create fresh child contexts from
+	ServiceChan chan error
+	LogChan     chan string
+	Logs        []string
+	LogMutex    sync.Mutex
+}
+
+type AppState struct {
+	RunningServices map[string]*RunningService
+	OrderedNames    []string
+	GlobalCtx       context.Context
+	GlobalCancel    context.CancelFunc
+	ParentCtx       context.Context
+	Config          *parser.Config
+}
 
 func CheckHealth(ctx context.Context, url string, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -35,55 +57,159 @@ func CheckHealth(ctx context.Context, url string, timeout time.Duration) error {
 	}
 }
 
-func main() {
-	defer func() {
-		fmt.Println("Maybe this works")
-	}()
+func NewRunningService(name string, service *parser.Service, globalCtx context.Context) *RunningService {
+	ctx, cancel := context.WithCancel(globalCtx)
 
-	fmt.Println("hello, fictional robot")
+	return &RunningService{
+		Name:        name,
+		Service:     service,
+		Ctx:         ctx,
+		Cancel:      cancel,
+		GlobalCtx:   globalCtx,
+		ServiceChan: make(chan error, 1),
+		LogChan:     make(chan string, 100),
+		Logs:        []string{},
+	}
+}
 
-	config := parser.ParseConfig("devenv.yaml")
+func (rs *RunningService) AddLog(log string) {
+	rs.LogMutex.Lock()
+	defer rs.LogMutex.Unlock()
+	rs.Logs = append(rs.Logs, log)
+	// keep only last 100 logs in memory
+	if len(rs.Logs) > 100 {
+		rs.Logs = rs.Logs[1:]
+	}
+}
 
-	orderedServices := sorter.SortServices(config)
+func (rs *RunningService) GetLogs() []string {
+	rs.LogMutex.Lock()
+	defer rs.LogMutex.Unlock()
+	// Return a copy
+	logsCopy := make([]string, len(rs.Logs))
+	copy(logsCopy, rs.Logs)
+	return logsCopy
+}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt,
-		syscall.SIGTERM)
-	defer stop()
+func (rs *RunningService) Start() error {
+	// create a fresh context as child of global context
+	// this allows restarting after a previous cancellation
+	rs.Ctx, rs.Cancel = context.WithCancel(rs.GlobalCtx)
 
-	serviceChan := make(chan error)
-	logChan := make(chan string)
+	go starter.StartService(rs.Service, rs.Ctx, rs.ServiceChan, rs.LogChan)
 
-	for _, s := range orderedServices {
-		service := config.Services[s]
-		serviceUrl := fmt.Sprintf("localhost:%d", service.Port)
-
-		fmt.Printf("Starting %s\n", s)
-
-		go starter.StartService(&service, ctx, serviceChan, logChan)
-
-		err := <-serviceChan
-		if err != nil {
-			fmt.Println("an error occurred while starting process\n", err.Error())
-			stop()
-			return
-		}
-
-		err = CheckHealth(ctx, serviceUrl, 5*time.Second)
-
-		if err != nil {
-			fmt.Printf("error making request to %s", s)
-			stop()
-			return
-		}
-
-		fmt.Printf("Started %s\n", s)
-
-		go func() {
-			for msg := range logChan {
-				fmt.Print(msg)
-			}
-		}()
+	// wait for initial error report
+	err := <-rs.ServiceChan
+	if err != nil {
+		return err
 	}
 
-	<-ctx.Done()
+	// health check
+	serviceUrl := fmt.Sprintf("localhost:%d", rs.Service.Port)
+	err = CheckHealth(rs.Ctx, serviceUrl, 5*time.Second)
+	if err != nil {
+		return fmt.Errorf("health check failed for %s: %w", rs.Name, err)
+	}
+
+	// start log collector goroutine - keeps running even after context cancels
+	go func() {
+		for log := range rs.LogChan {
+			rs.AddLog(log)
+		}
+	}()
+
+	return nil
+}
+
+func (rs *RunningService) Stop() {
+	rs.Cancel()
+}
+
+func StartAllServices(app *AppState) error {
+	for _, sName := range app.OrderedNames {
+		rs := app.RunningServices[sName]
+
+		err := rs.Start()
+		if err != nil {
+			fmt.Printf("Error starting %s: %v\n", sName, err)
+			return err
+		}
+	}
+	return nil
+}
+
+func StopAllServices(app *AppState) {
+	app.GlobalCancel()
+}
+
+func RestartAllServices(app *AppState) error {
+	StopAllServices(app)
+
+	// give services time to shut down
+	time.Sleep(500 * time.Millisecond)
+
+	// create new global context and services
+	globalCtx, globalCancel := context.WithCancel(app.ParentCtx)
+	app.GlobalCtx = globalCtx
+	app.GlobalCancel = globalCancel
+
+	app.RunningServices = make(map[string]*RunningService)
+	for _, sName := range app.OrderedNames {
+		service := app.Config.Services[sName]
+		app.RunningServices[sName] = NewRunningService(sName, &service, app.GlobalCtx)
+	}
+
+	return StartAllServices(app)
+}
+
+func StopService(app *AppState, serviceName string) {
+	if rs, exists := app.RunningServices[serviceName]; exists {
+		rs.Stop()
+	}
+}
+
+func main() {
+	defer func() {
+		fmt.Println("Shutting down")
+	}()
+
+	config := parser.ParseConfig("devenv.yaml")
+	orderedNames := sorter.SortServices(config)
+
+	// parent context (survives restarts, killed only on program exit)
+	parentCtx, parentCancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer parentCancel()
+
+	// global context for current service lifecycle
+	globalCtx, globalCancel := context.WithCancel(parentCtx)
+
+	app := &AppState{
+		RunningServices: make(map[string]*RunningService),
+		OrderedNames:    orderedNames,
+		GlobalCtx:       globalCtx,
+		GlobalCancel:    globalCancel,
+		ParentCtx:       parentCtx,
+		Config:          config,
+	}
+
+	// initialize running services
+	for _, sName := range orderedNames {
+		service := config.Services[sName]
+		app.RunningServices[sName] = NewRunningService(sName, &service, app.GlobalCtx)
+	}
+
+	err := StartAllServices(app)
+	if err != nil {
+		fmt.Printf("Failed to start services: %v\n", err)
+		return
+	}
+
+	// start UI (blocks until user quits)
+	err = RunUI(app)
+	if err != nil {
+		fmt.Println("UI error:", err)
+	}
+
+	// clean up when UI exits
+	app.GlobalCancel()
 }
