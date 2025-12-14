@@ -15,7 +15,7 @@ Managing multiple services (Redis, backend API, frontend) across different termi
 ## Installation
 
 ### Prerequisites
-- Go 1.24 or later
+- Go 1.21 or later
 
 ### Build from Source
 
@@ -25,7 +25,7 @@ cd fictional-robot
 go build -o demanager ./cmd/demanager
 ```
 
-This creates a `demanager` executable in your current directory.
+This creates a `demanager` executable in your repo root.
 
 ## Quick Start
 
@@ -188,13 +188,22 @@ go test ./...
 
 ```
 .
-├── main.go           # App orchestration
-├── ui.go             # Terminal UI
-├── parser.go         # Config parsing
-├── sorter.go         # Dependency resolution
-├── starter.go        # Process management
-├── devenv.yaml       # Example config
-└── go.mod
+├── cmd/
+│   └── demanager/
+│       ├── main.go      # App orchestration
+│       └── ui.go        # Terminal UI (BubbleTea)
+├── internal/
+│   ├── parser/
+│   │   └── parser.go    # YAML config parsing
+│   ├── sorter/
+│   │   └── sorter.go    # Dependency resolution (topological sort)
+│   └── starter/
+│       └── starter.go   # Process management and log capture
+├── devenv.yaml          # Example configuration
+├── go.mod
+├── go.sum
+├── README.md            # This file
+└── LICENSE
 ```
 
 ## Future Plans
