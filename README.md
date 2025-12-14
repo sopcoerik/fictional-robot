@@ -15,7 +15,7 @@ Managing multiple services (Redis, backend API, frontend) across different termi
 ## Installation
 
 ### Prerequisites
-- Go 1.21 or later
+- Go 1.24 or later
 
 ### Build from Source
 
