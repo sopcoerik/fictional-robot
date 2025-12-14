@@ -64,7 +64,7 @@ The dashboard will launch automatically in your terminal.
 
 - **Arrow Keys (Left/Right)**: Switch between service tabs
 - **Tab / Shift+Tab**: Navigate between buttons
-- **Click on Tab**: Jump directly to a service
+- **Click on Tab**: Jump directly to a service - NOT FUNCTIONAL YET
 - **Enter / Space**: Activate focused button
 - **q / Ctrl+C**: Quit
 
