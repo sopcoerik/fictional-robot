@@ -232,5 +232,5 @@ Apache 2.0 ( for now ) License - see LICENSE file for details.
 - Lipgloss (UI styling)
 - YAML v3 (configuration)
 
-**Author:** [Your Name]  
+**Author:** Sopco Erik  
 **Repository:** https://github.com/sopcoerik/fictional-robot
