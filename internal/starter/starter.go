@@ -16,7 +16,8 @@ func StartService(service *parser.Service, ctx context.Context, serviceChan chan
 
 	for {
 
-		if ctx.Err() != nil {
+		if err := ctx.Err(); err != nil {
+			fmt.Printf("%s context: %v", service.Command, err)
 			return
 		}
 
