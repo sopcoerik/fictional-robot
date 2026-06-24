@@ -202,7 +202,12 @@ func main() {
 		fmt.Println("Shutting down")
 	}()
 
-	config := parser.ParseConfig("devenv.yaml")
+	config, err := parser.ParseConfig("devenv.yaml")
+	if err != nil {
+		fmt.Println("failed to read config:", err)
+		return
+	}
+
 	orderedNames, err := sorter.SortServices(config)
 	if err != nil {
 		fmt.Println("config error:", err)

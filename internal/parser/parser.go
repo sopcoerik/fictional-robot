@@ -16,20 +16,17 @@ type Config struct {
 	Services map[string]Service 
 }
 
-func ParseConfig(configPath string) (*Config) {
-	data, readErr := os.ReadFile(configPath)
-
-	if readErr != nil {
-		panic(readErr)
+func ParseConfig(configPath string) (*Config, error) {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, err
 	}
 
 	var config Config
 
-	marshErr := yaml.Unmarshal(data, &config)
-
-	if marshErr != nil {
-		panic(marshErr)
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, err
 	}
 
-	return &config
+	return &config, nil
 }

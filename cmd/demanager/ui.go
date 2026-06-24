@@ -93,6 +93,13 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Width = msg.Width
 		m.Height = msg.Height
 
+	case tea.MouseMsg:
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft && msg.Y == 0 {
+			if idx := m.tabAtX(msg.X); idx >= 0 {
+				m.CurrentTabIdx = idx
+			}
+		}
+
 	case TickMsg:
 		return m, tickCmd()
 	}
@@ -129,6 +136,21 @@ func (m UIModel) renderTabs() string {
 		Bold(true).
 		Foreground(lipgloss.Color("4")).
 		Render(tabsStr)
+}
+
+// tabAtX returns the tab index at screen column x on the tab row (row 0),
+// or -1 if the click didn't land on a tab. Each tab renders as "[name]" or
+// " name " (len+2), joined by a single space.
+func (m UIModel) tabAtX(x int) int {
+	pos := 0
+	for i, name := range m.AppState.OrderedNames {
+		width := len(name) + 2
+		if x >= pos && x < pos+width {
+			return i
+		}
+		pos += width + 1 // + the single-space separator
+	}
+	return -1
 }
 
 func (m UIModel) renderLogs() string {
@@ -213,7 +235,7 @@ func (m UIModel) renderButton(idx int, label string) string {
 
 func RunUI(appState *AppState) error {
 	model := NewUIModel(appState)
-	p := tea.NewProgram(model, tea.WithAltScreen())
+	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
 	_, err := p.Run()
 	return err

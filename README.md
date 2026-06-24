@@ -64,7 +64,7 @@ The dashboard will launch automatically in your terminal.
 
 - **Arrow Keys (Left/Right)**: Switch between service tabs
 - **Tab / Shift+Tab**: Navigate between buttons
-- **Click on Tab**: Jump directly to a service - NOT FUNCTIONAL YET
+- **Click on Tab**: Jump directly to that service
 - **Enter / Space**: Activate focused button
 - **q / Ctrl+C**: Quit
 
@@ -122,7 +122,7 @@ Each service context can be cancelled independently, while the global context co
 ✅ Automatic dependency resolution (detects circular dependencies)  
 ✅ TCP health checks on startup  
 ✅ Real-time log capture (stdout/stderr)  
-✅ Per-service log viewing (last 200 entries)  
+✅ Per-service log viewing (view sizes to your terminal; ~100 lines kept in memory)  
 ✅ Individual service control (start/stop)  
 ✅ Batch restart (restart all services)  
 ✅ Graceful shutdown (SIGINT handling)  
@@ -144,12 +144,12 @@ services:
 
 - Service names must be unique
 - Circular dependencies are detected and rejected
-- Services in `depends_on` must exist in the config
+- Services in `depends_on` must exist in the config (a missing dependency is reported by name)
 - Health checks fail if the port isn't reachable after 5 seconds
 
 ## Limitations
 
-- Log view shows last 30 lines (200 stored in memory)
+- Log view sizes to the terminal; about 100 lines are kept in memory per service
 - No log scrolling yet (planned for v1.1)
 - No SQLite persistence (planned for v1.1)
 - No CPU/RAM metrics (planned for v1.1)
@@ -172,6 +172,9 @@ services:
   b:
     depends_on: [a]  # ← This creates a cycle
 ```
+
+### "depends on X, which is not defined"
+A service's `depends_on` lists a name that has no matching service. Fix the typo, or add the missing service to the config.
 
 ### UI doesn't render correctly
 Try resizing your terminal or running in fullscreen. BubbleTea needs sufficient space.
