@@ -6,45 +6,57 @@ import (
 	"github.com/sopcoerik/fictional-robot/internal/parser"
 )
 
-func SortServices(config *parser.Config) ([]string) {
-	indegree := make(map[string]int)
-	dependencyGraph := make(map[string][]string)
-	var queue []string
+func SortServices(config *parser.Config) []string {
 
-	for sName, sData := range(config.Services) {
-		indegree[sName] = 0
+    // inDegree: how many dependencies this service is waiting on
+    inDegree := make(map[string]int)
 
-		for _, service := range(sData.DependsOn) {
-			indegree[sName] += 1
-			dependencyGraph[service] = append(dependencyGraph[service], sName)
-		}
+    // dependentsOf: list of services that depend on this one
+    dependentsOf := make(map[string][]string)
+    
+    var readyQueue []string
 
-		if indegree[sName] == 0 {
-			queue = append(queue, sName)
-		}
-	}
+    // 1. Build the graph and calculate in-degrees
+    for name, data := range config.Services {
+		
+        // Initialize every service with 0 in-degree
+        if _, exists := inDegree[name]; !exists {
+            inDegree[name] = 0
+        }
 
-	var orderedQueue []string
+        for _, dep := range data.DependsOn {
+            inDegree[name]++
+            dependentsOf[dep] = append(dependentsOf[dep], name)
+        }
+    }
 
-	for i := 0; i < len(queue); i += 1 {
-		sName := queue[i]
+    // 2. Seed the queue with services that have no dependencies
+    for name, degree := range inDegree {
+        if degree == 0 {
+            readyQueue = append(readyQueue, name)
+        }
+    }
 
-		orderedQueue = append(orderedQueue, sName)
+    // 3. Process the queue (BFS)
+    // We use a simple slice as a queue, iterating by index
+    for i := 0; i < len(readyQueue); i++ {
+        current := readyQueue[i]
 
-		for _, s := range(dependencyGraph[sName]) {
+        // For every service waiting on the current one...
+        for _, dependent := range dependentsOf[current] {
+            inDegree[dependent]-- // One dependency is now satisfied
 
-			indegree[s] -= 1
+            // If it has no more pending dependencies, it's ready
+            if inDegree[dependent] == 0 {
+                readyQueue = append(readyQueue, dependent)
+            }
+        }
+    }
 
-			if indegree[s] == 0 {
-				queue = append(queue, s)
+    // 4. Check for cycles
+    if len(readyQueue) != len(config.Services) {
+        log.Fatal("Circular dependency detected. A cycle exists in your service graph.")
+    }
 
-			}
-		}
-	}
-
-	if len(orderedQueue) != len(config.Services) {
-		log.Fatal("Circular dependency detected. Quitting program...")
-	}
-
-	return orderedQueue
+    return readyQueue
 }

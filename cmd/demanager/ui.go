@@ -69,7 +69,10 @@ func (m UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case 0:
 				StopService(m.AppState, currentService)
 			case 1:
-				rs := m.AppState.RunningServices[currentService]
+				rs := m.AppState.GetService(currentService)
+				if rs == nil {
+					break
+				}
 				go func() {
 					err := rs.Start()
 					if err != nil {
@@ -134,7 +137,10 @@ func (m UIModel) renderLogs() string {
 	}
 
 	currentService := m.AppState.OrderedNames[m.CurrentTabIdx]
-	rs := m.AppState.RunningServices[currentService]
+	rs := m.AppState.GetService(currentService)
+	if rs == nil {
+		return "(restarting…)"
+	}
 
 	logs := rs.GetLogs()
 

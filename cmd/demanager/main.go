@@ -34,6 +34,15 @@ type AppState struct {
 	GlobalCancel    context.CancelFunc
 	ParentCtx       context.Context
 	Config          *parser.Config
+	Mu              sync.Mutex // guards RunningServices, GlobalCtx, GlobalCancel (UI reads them concurrently)
+}
+
+// GetService returns the running service for a name, or nil if it isn't
+// present (e.g. mid-restart). Safe to call from the UI goroutine.
+func (app *AppState) GetService(name string) *RunningService {
+	app.Mu.Lock()
+	defer app.Mu.Unlock()
+	return app.RunningServices[name]
 }
 
 func CheckHealth(ctx context.Context, url string, timeout time.Duration) error {
@@ -127,7 +136,10 @@ func (rs *RunningService) Stop() {
 
 func StartAllServices(app *AppState) error {
 	for _, sName := range app.OrderedNames {
-		rs := app.RunningServices[sName]
+		rs := app.GetService(sName)
+		if rs == nil {
+			continue
+		}
 
 		err := rs.Start()
 		if err != nil {
@@ -139,7 +151,10 @@ func StartAllServices(app *AppState) error {
 }
 
 func StopAllServices(app *AppState) {
-	app.GlobalCancel()
+	app.Mu.Lock()
+	cancel := app.GlobalCancel
+	app.Mu.Unlock()
+	cancel()
 }
 
 func RestartAllServices(app *AppState) error {
@@ -148,22 +163,27 @@ func RestartAllServices(app *AppState) error {
 	// give services time to shut down
 	time.Sleep(500 * time.Millisecond)
 
-	// create new global context and services
+	// build the new context and services locally first
 	globalCtx, globalCancel := context.WithCancel(app.ParentCtx)
-	app.GlobalCtx = globalCtx
-	app.GlobalCancel = globalCancel
 
-	app.RunningServices = make(map[string]*RunningService)
+	newServices := make(map[string]*RunningService)
 	for _, sName := range app.OrderedNames {
 		service := app.Config.Services[sName]
-		app.RunningServices[sName] = NewRunningService(sName, &service, app.GlobalCtx)
+		newServices[sName] = NewRunningService(sName, &service, globalCtx)
 	}
+
+	// swap them in atomically under the lock (the UI reads these concurrently)
+	app.Mu.Lock()
+	app.GlobalCtx = globalCtx
+	app.GlobalCancel = globalCancel
+	app.RunningServices = newServices
+	app.Mu.Unlock()
 
 	return StartAllServices(app)
 }
 
 func StopService(app *AppState, serviceName string) {
-	if rs, exists := app.RunningServices[serviceName]; exists {
+	if rs := app.GetService(serviceName); rs != nil {
 		rs.Stop()
 	}
 }
@@ -206,6 +226,7 @@ func main() {
 
 	// start UI (blocks until user quits)
 	err = RunUI(app)
+
 	if err != nil {
 		fmt.Println("UI error:", err)
 	}
