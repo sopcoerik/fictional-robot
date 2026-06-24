@@ -144,8 +144,17 @@ func (m UIModel) renderLogs() string {
 
 	logs := rs.GetLogs()
 
-	// show last 30 logs that fit in the available height
-	maxHeight := 30
+	// size the log area to the terminal, leaving room for tabs, buttons and borders
+	maxWidth := m.Width - 6
+	if maxWidth < 20 {
+		maxWidth = 20
+	}
+	maxHeight := m.Height - 16
+	if maxHeight < 3 {
+		maxHeight = 3
+	}
+
+	// keep only the last maxHeight log entries
 	startIdx := len(logs) - maxHeight
 	if startIdx < 0 {
 		startIdx = 0
@@ -154,13 +163,13 @@ func (m UIModel) renderLogs() string {
 	visibleLogs := logs[startIdx:]
 	logsStr := strings.Join(visibleLogs, "")
 
-	// truncate lines to max width of 120 chars
-	maxWidth := 120
+	// truncate each line to the available width (rune-safe for multi-byte chars)
 	lines := strings.Split(logsStr, "\n")
 	var truncatedLines []string
 	for _, line := range lines {
-		if len(line) > maxWidth {
-			truncatedLines = append(truncatedLines, line[:maxWidth])
+		runes := []rune(line)
+		if len(runes) > maxWidth {
+			truncatedLines = append(truncatedLines, string(runes[:maxWidth]))
 		} else {
 			truncatedLines = append(truncatedLines, line)
 		}
@@ -170,8 +179,8 @@ func (m UIModel) renderLogs() string {
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		Padding(1).
-		Width(120).
-		Height(30).
+		Width(maxWidth).
+		Height(maxHeight).
 		Render(logsStr)
 }
 

@@ -69,7 +69,7 @@ func CheckHealth(ctx context.Context, url string, timeout time.Duration) error {
 func NewRunningService(name string, service *parser.Service, globalCtx context.Context) *RunningService {
 	ctx, cancel := context.WithCancel(globalCtx)
 
-	return &RunningService{
+	rs := &RunningService{
 		Name:        name,
 		Service:     service,
 		Ctx:         ctx,
@@ -79,6 +79,22 @@ func NewRunningService(name string, service *parser.Service, globalCtx context.C
 		LogChan:     make(chan string, 100),
 		Logs:        []string{},
 	}
+
+	// one log collector for this service's whole lifetime: it drains LogChan and
+	// exits when the global context is cancelled (shutdown or restart). This is
+	// why Start() no longer spawns a collector each time it runs.
+	go func() {
+		for {
+			select {
+			case <-globalCtx.Done():
+				return
+			case log := <-rs.LogChan:
+				rs.AddLog(log)
+			}
+		}
+	}()
+
+	return rs
 }
 
 func (rs *RunningService) AddLog(log string) {
@@ -119,13 +135,6 @@ func (rs *RunningService) Start() error {
 	if err != nil {
 		return fmt.Errorf("health check failed for %s: %w", rs.Name, err)
 	}
-
-	// start log collector goroutine - keeps running even after context cancels
-	go func() {
-		for log := range rs.LogChan {
-			rs.AddLog(log)
-		}
-	}()
 
 	return nil
 }
@@ -194,7 +203,11 @@ func main() {
 	}()
 
 	config := parser.ParseConfig("devenv.yaml")
-	orderedNames := sorter.SortServices(config)
+	orderedNames, err := sorter.SortServices(config)
+	if err != nil {
+		fmt.Println("config error:", err)
+		return
+	}
 
 	// parent context (survives restarts, killed only on program exit)
 	parentCtx, parentCancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -218,7 +231,7 @@ func main() {
 		app.RunningServices[sName] = NewRunningService(sName, &service, app.GlobalCtx)
 	}
 
-	err := StartAllServices(app)
+	err = StartAllServices(app)
 	if err != nil {
 		fmt.Printf("Failed to start services: %v\n", err)
 		return

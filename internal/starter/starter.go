@@ -2,14 +2,11 @@ package starter
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"os/exec"
-	"strings"
 	"syscall"
-	"time"
 
 	"github.com/sopcoerik/fictional-robot/internal/parser"
 )
@@ -29,28 +26,16 @@ func StartService(service *parser.Service, ctx context.Context, serviceChan chan
 	stdoutPipe, _ := cmd.StdoutPipe()
 	stderrPipe, _ := cmd.StderrPipe()
 
-	var stderr bytes.Buffer
-
-	cmd.Stderr = &stderr
-
-	err := cmd.Start()
-
-	if err != nil {
+	if err := cmd.Start(); err != nil {
 		serviceChan <- err
 		return
 	}
 
-	// give the command time to fail (bad syntax etc.)
-	time.Sleep(50 * time.Millisecond)
-
-	stderrStr := strings.TrimSpace(stderr.String())
-	if stderrStr != "" {
-		serviceChan <- fmt.Errorf("ERROR: %s: %s", service.Command, stderrStr)
-		return
-	}
-
+	// the process started; whether it actually comes up is verified by the
+	// health check in the caller
 	serviceChan <- nil
 
+	// stream BOTH stdout and stderr into the log channel, line by line
 	pumpLogs := func(pipe io.Reader, source string) {
 		scanner := bufio.NewScanner(pipe)
 

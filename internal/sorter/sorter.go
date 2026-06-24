@@ -1,12 +1,12 @@
 package sorter
 
 import (
-	"log"
+	"fmt"
 
 	"github.com/sopcoerik/fictional-robot/internal/parser"
 )
 
-func SortServices(config *parser.Config) []string {
+func SortServices(config *parser.Config) ([]string, error) {
 
     // inDegree: how many dependencies this service is waiting on
     inDegree := make(map[string]int)
@@ -25,6 +25,9 @@ func SortServices(config *parser.Config) []string {
         }
 
         for _, dep := range data.DependsOn {
+            if _, ok := config.Services[dep]; !ok {
+                return nil, fmt.Errorf("service %q depends on %q, which is not defined", name, dep)
+            }
             inDegree[name]++
             dependentsOf[dep] = append(dependentsOf[dep], name)
         }
@@ -55,8 +58,8 @@ func SortServices(config *parser.Config) []string {
 
     // 4. Check for cycles
     if len(readyQueue) != len(config.Services) {
-        log.Fatal("Circular dependency detected. A cycle exists in your service graph.")
+        return nil, fmt.Errorf("circular dependency detected: a cycle exists in your service graph")
     }
 
-    return readyQueue
+    return readyQueue, nil
 }
